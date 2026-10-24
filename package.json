@@ -1,0 +1,44 @@
+{
+  "name": "pi-workbuddy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight native WorkBuddy AI international provider for Pi",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "workbuddy"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YoungJurry/pi-workbuddy.git"
+  },
+  "homepage": "https://github.com/YoungJurry/pi-workbuddy#readme",
+  "bugs": {
+    "url": "https://github.com/YoungJurry/pi-workbuddy/issues"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "extensions",
+    "src",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/workbuddy.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "test": "node --import ./scripts/offline.js --test",
+    "check": "node scripts/check.js"
+  }
+}

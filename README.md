@@ -2,7 +2,7 @@
 
 面向 **WorkBuddy AI 国际版** 的轻量 Pi 原生 Provider。由 Pi 直接访问 `https://www.workbuddy.ai`，不运行 WorkBuddy CLI，不启动本地代理。
 
-> 非官方、实验性集成。兼容代码改编自 [lutfi238/pi-workbuddy@0.2.4](https://github.com/lutfi238/pi-workbuddy/tree/55b3baafce9099aed3aa98d1a1714c467e741b60)，保留其客户端版本、账号头、gzip 和 SSE 修正。来源及修改范围见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+> 非官方、实验性集成。兼容代码改编自 [lutfi238/pi-workbuddy@0.2.4](https://github.com/lutfi238/pi-workbuddy/tree/55b3baafce9099aed3aa98d1a1714c467e741b60)，保留其账号头、gzip 和 SSE 修正。0.1.1 起，客户端身份头改为官方 WorkBuddy AI 5.8.4 安装包中静态确认的桌面网关配置，不再发送插件名称作为使用端。来源及修改范围见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [身份字段核对记录](docs/client-identity.md)。
 >
 > 本仓库只做过离线测试，没有使用真实账号发起推理或消耗额度。上游确认过基本登录与对话，但工具、图片和长期 token 刷新的真实服务兼容性仍需由使用者验证。
 
@@ -12,6 +12,12 @@
 
 ```sh
 pi install git:github.com/YoungJurry/pi-workbuddy
+```
+
+已有安装更新到最新代码：
+
+```sh
+pi update git:github.com/YoungJurry/pi-workbuddy
 ```
 
 重启 Pi 或执行 `/reload`，然后：
@@ -76,14 +82,18 @@ Pi 保留 Agent 控制权。登录交互、凭据保存、token 刷新锁、模�
 
 ## 保留的客户端兼容逻辑
 
-- `CLI/unknown WorkBuddy/5.8.4 pi-workbuddy/<版本>` 版本标识，用于服务端客户端版本解析；不是宣称 Pi 是官方桌面应用。
+- `User-Agent: WorkBuddy/5.8.4 WorkBuddy/5.8.4 CLI/2.161.0`，来自已核对的官方桌面网关 UA 构造格式及其捆绑版本；重复的 WorkBuddy 段是该构造格式的一部分。
+- `X-IDE-Type: WorkBuddy`、`X-IDE-Name: WorkBuddy`、`X-IDE-Version: 5.8.4`；登录、目录、刷新及推理共用同一配置。
+- 插件自己的版本仅用于本地包／状态显示，不写入客户端身份头或 UA；不会因此改动 Pi 系统提示词、任务和工具内容。
 - `Authorization`、`X-User-Id`、`X-Domain` 和企业／租户相关账号头。
 - 会话关联及逐请求／消息 ID。
 - gzip 请求、SSE 响应、重复／缺失工具调用 ID 的整理、UTF-8 边界处理、usage 尾帧。
 - `system` 角色、`max_tokens` 等上游适配，以及 Pi 剩余上下文／输出上限保护。
 - 登录、目录、刷新及推理请求固定可信 HTTPS origin，拒绝重定向、外部模型 URL、远程 API Key 和协议注入。
 
-版本标识与私有接口可能随上游更新失效，尤其是客户端校验的业务错误 `12403`。不能保证这些兼容字段永远有效，也不能绕过认证、账号权限、地域或额度限制。
+版本标识与私有接口可能随上游更新失效，尤其是客户端校验的业务错误 `12403`。这是已核对源码的身份头配置，不是完整客户端抓包重放，也不保证服务端无法识别第三方调用或判定为奖励活动合格客户端。认证、账号权限、地域、限流及额度限制不变。
+
+更新只影响之后发出的请求；服务端历史用量记录中的 `pi-workbuddy` 不会被改写。
 
 ## 模型目录与限制
 

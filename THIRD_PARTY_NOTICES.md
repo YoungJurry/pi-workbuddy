@@ -15,10 +15,10 @@ This project is a derivative of **lutfi238/pi-workbuddy**, licensed under MIT.
 
 The following files retain or adapt upstream source:
 
-- `src/client-identity.js`: retains the inspected WorkBuddy protocol baseline; changes this derivative's extension version.
-- `src/native-client.js`: retains browser login, polling, token refresh, account-header validation and authenticated catalog access; removes credit-reader imports and methods.
+- `src/client-identity.js`: separates this derivative's local version from wire identity. Since 0.1.1, uses a client-header profile based on static inspection of the official WorkBuddy AI 5.8.4 desktop artifact rather than the upstream plugin's self-identifying headers; provenance is in `docs/client-identity.md`.
+- `src/native-client.js`: retains browser login, polling, token refresh, account-header validation and authenticated catalog access; removes credit-reader imports and methods and applies the shared client-header profile.
 - `src/native-errors.js`: retains allowlisted sanitized diagnostics; removes unused credit-reader categories.
-- `src/native-transport.js`: retains provider-scoped identity headers, gzip and SSE adaptation.
+- `src/native-transport.js`: retains provider-scoped transport, gzip and SSE adaptation; replaces Pi-specific IDE fields and UA suffix with the shared desktop header profile.
 - `src/native-models.js`, `src/native-capabilities.js`, `src/native-limits.js`: retain upstream metadata projection, capability references and output-budget protections. References are upstream's optimistic metadata policy, not newly performed live service verification.
 - `src/native-catalog-cache.js`: retains account-scoped public metadata caching.
 - `src/native-provider.js`: adapts the complete Pi Provider and command registration; ordinary unforced refreshes stay cache-only.
@@ -37,6 +37,6 @@ The following synthetic tests were copied from the same upstream Git commit:
 - `test/native-pi.test.js`
 - `test/native.test.js`
 
-The catalog-refresh fixtures were adapted to request `force: true` under this derivative's explicit-refresh policy. New idle/lifecycle and actual Pi-loader tests, the test-only network firewall, package assembly, documentation and static checks were added for this repository.
+The catalog-refresh fixtures were adapted to request `force: true` under this derivative's explicit-refresh policy. New idle/lifecycle and actual Pi-loader tests, the test-only network firewall, package assembly, documentation and static checks were added for this repository. Client-identity regressions were updated and extended in 0.1.1 to verify the shared official desktop header baseline, overriding SDK identity fields, unchanged account data, gzip modes and correlation IDs.
 
 MIT permits modification and redistribution provided the original copyright and permission notice remain. This attribution does not imply endorsement by upstream or WorkBuddy.

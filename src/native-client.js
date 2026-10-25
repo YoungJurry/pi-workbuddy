@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { WorkbuddyError } from "./native-errors.js";
-import { USER_AGENT } from "./client-identity.js";
+import { CLIENT_HEADERS } from "./client-identity.js";
 
 export const ORIGIN = "https://www.workbuddy.ai";
 export const BASE_URL = ORIGIN + "/v2";
@@ -21,11 +21,11 @@ export function accountHeaders(credential) {
   }
   validDomain({ domain: credential.domain });
   const headers = {
+    ...CLIENT_HEADERS,
     Authorization: "Bearer " + safeHeader(credential.access, "access token"),
     "X-User-Id": safeHeader(credential.userId, "user ID"),
     "X-Domain": credential.domain || "www.workbuddy.ai",
     "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
-    "User-Agent": USER_AGENT,
   };
   if (credential.enterpriseId) {
     headers["X-Enterprise-Id"] = safeHeader(credential.enterpriseId);
@@ -97,7 +97,7 @@ export function createNativeClient({
     const requestHeaders = {
       "Content-Type": "application/json", "X-Domain": "www.workbuddy.ai",
       "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": USER_AGENT,
+      ...CLIENT_HEADERS,
       ...(credential ? accountHeaders(credential) : {}), ...headers,
     };
     let response;

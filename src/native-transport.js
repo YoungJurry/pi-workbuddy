@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 import { ORIGIN, limitedJson } from "./native-client.js";
-import { USER_AGENT, EXTENSION_VERSION } from "./client-identity.js";
+import { CLIENT_HEADERS } from "./client-identity.js";
 
 // Normalize complete SSE frames, never individual TCP/UTF-8 chunks.
 export function normalizeSse(body) {
@@ -67,11 +67,10 @@ export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = tr
     const headers = new Headers(request.headers);
     const requestId = randomUUID();
     for (const [key, value] of Object.entries({
+      ...CLIENT_HEADERS,
       "X-Conversation-ID": conversationId, "X-Conversation-Request-ID": requestId,
       "X-Conversation-Message-ID": requestId, "X-Request-ID": requestId,
-      "X-Agent-Intent": "craft", "X-IDE-Type": "pi", "X-IDE-Name": "pi-workbuddy",
-      "X-IDE-Version": EXTENSION_VERSION, "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": USER_AGENT,
+      "X-Agent-Intent": "craft", "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
       // Conservative privacy default: do not opt prompts into model optimization.
       "X-Private-Data": "true", "Content-Type": "application/json", Accept: "text/event-stream",
     })) headers.set(key, value);

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
 import { ORIGIN, createNativeClient } from "../src/native-client.js";
+import { CLIENT_HEADERS } from "../src/client-identity.js";
 
 // Optional host integration. No dependencies installed and no real credentials used.
 const dist = process.env.PI_AI_TEST_PATH;
@@ -40,6 +41,8 @@ hostTest("Pi host: tool-call round trip, reasoning, Unicode, final usage, and in
     assert.equal(options.headers.get("Authorization"), "Bearer SYNTHETIC_ACCESS");
     assert.equal(options.headers.get("X-User-Id"), "mock-user");
     assert.equal(options.headers.get("X-Domain"), "www.workbuddy.ai");
+    for (const [key, value] of Object.entries(CLIENT_HEADERS)) assert.equal(options.headers.get(key), value);
+    assert.doesNotMatch(JSON.stringify([...options.headers]), /pi-workbuddy|CLI\/unknown/i);
     assert.equal(options.redirect, "error");
     const body = JSON.parse(gunzipSync(options.body));
     bodies.push(body);

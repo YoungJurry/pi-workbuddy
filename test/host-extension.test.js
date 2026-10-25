@@ -15,7 +15,7 @@ hostTest("Pi 1.4 loader loads the actual package without installation, credentia
   const loaded = await loadExtensions([join(root, "extensions/workbuddy.js")], root);
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions.length, 1);
-  assert.deepEqual([...loaded.extensions[0].handlers.keys()], ["session_start"]);
+  assert.deepEqual([...loaded.extensions[0].handlers.keys()], ["session_start", "session_shutdown"]);
   assert.equal(loaded.extensions[0].tools.size, 0);
   assert.deepEqual([...loaded.extensions[0].commands.keys()], ["workbuddy"]);
   assert.equal(loaded.runtime.pendingNativeProviderRegistrations.length, 1);

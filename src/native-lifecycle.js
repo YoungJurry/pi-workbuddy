@@ -23,19 +23,20 @@ export async function recoverSelectedModel(pi, provider, ctx, selected = ctx.mod
   }
 }
 
-export async function refreshWorkbuddyCatalog(pi, provider, ctx) {
+export async function refreshWorkbuddyCatalog(pi, provider, ctx, signal = ctx.signal) {
+  if (signal?.aborted) return false;
   const selected = ctx.model;
   try {
     const result = await ctx.modelRegistry.refresh({
-      providers: ["workbuddy"], force: true, signal: ctx.signal,
+      providers: ["workbuddy"], force: true, signal,
       ...(process.env.PI_OFFLINE !== undefined ? { allowNetwork: false } : {}),
     });
-    if (result.aborted) return false;
+    if (result.aborted || signal?.aborted) return false;
     if (result.errors.has("workbuddy")) throw result.errors.get("workbuddy");
     await recoverSelectedModel(pi, provider, ctx, selected);
     return true;
   } catch (error) {
-    if (!ctx.signal?.aborted) {
+    if (!signal?.aborted) {
       ctx.ui?.notify?.("WorkBuddy catalog refresh failed: " + describeFailure(error) +
         " Cached models, if available, were retained. Use /workbuddy refresh to retry. No chat request sent.", "warning");
     }
@@ -45,8 +46,28 @@ export async function refreshWorkbuddyCatalog(pi, provider, ctx) {
 
 /** No agent_end/message_end/model_select/context/provider-request handlers. */
 export function registerNativeLifecycle(pi, provider) {
-  pi.on("session_start", async (_event, ctx) => {
+  let activeRefresh;
+  const cancelRefresh = () => {
+    activeRefresh?.abort();
+    activeRefresh = undefined;
+  };
+
+  pi.on("session_start", (_event, ctx) => {
+    cancelRefresh();
     if (!ctx.modelRegistry.hasConfiguredAuth(provider.getModels()[0])) return;
-    await refreshWorkbuddyCatalog(pi, provider, ctx);
+    const controller = new AbortController();
+    activeRefresh = controller;
+    const signal = ctx.signal ? AbortSignal.any([ctx.signal, controller.signal]) : controller.signal;
+    const refresh = refreshWorkbuddyCatalog(pi, provider, ctx, signal).finally(() => {
+      if (activeRefresh === controller) activeRefresh = undefined;
+    });
+    // Headless callers still wait for discovery before their first prompt.
+    if (ctx.mode !== "tui") return refresh;
+    // Interactive sessions start with the cached/fallback catalog. Keep the live
+    // context so recovery cannot overwrite a model the user selects meanwhile.
+    void refresh.catch(() => {});
   });
+
+  // Never wait for network I/O while exiting, switching sessions, or reloading.
+  pi.on("session_shutdown", cancelRefresh);
 }

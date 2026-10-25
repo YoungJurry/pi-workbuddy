@@ -1,7 +1,7 @@
 import { createWorkbuddyProvider, registerNativeCommands } from "./native-provider.js";
 import { registerNativeLifecycle } from "./native-lifecycle.js";
 
-/** The only global event this package registers is session_start. */
+/** Only session lifecycle hooks; no per-turn or provider-request handlers. */
 export function registerWorkbuddy(pi, options) {
   const provider = createWorkbuddyProvider(options);
   pi.registerProvider(provider);

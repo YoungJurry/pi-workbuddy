@@ -12,6 +12,13 @@ const credential = () => ({ type: "oauth", origin: ORIGIN, userId: "synthetic-us
   access: "SYNTHETIC_ACCESS", refresh: "SYNTHETIC_REFRESH", expires: Date.now() + 3600000 });
 const noInference = { stream() { throw new Error("Unexpected inference"); }, streamSimple() { throw new Error("Unexpected inference"); } };
 
+const settleRefresh = () => new Promise(resolve => setImmediate(resolve));
+
+async function startSession(a) {
+  assert.equal(a.hooks.get("session_start")({}, a.ctx), undefined, "interactive startup must not await discovery");
+  await settleRefresh();
+}
+
 function assembly() {
   const hooks = new Map(), commands = new Map(), registered = [], notices = [];
   const counters = { catalog: 0, selected: 0, refresh: 0 };
@@ -20,8 +27,8 @@ function assembly() {
     registerProvider(provider) { registered.push(provider); },
     registerCommand(name, config) { commands.set(name, config); },
     on(name, handler) {
-      assert.equal(name, "session_start", "no global per-turn/model/UI hooks are permitted");
-      assert.ok(!hooks.has(name), "only one startup handler");
+      assert.ok(["session_start", "session_shutdown"].includes(name), "no global per-turn/model/UI hooks are permitted");
+      assert.ok(!hooks.has(name), "only one handler per lifecycle event");
       hooks.set(name, handler);
     },
     async setModel() { counters.selected++; return true; },
@@ -34,6 +41,7 @@ function assembly() {
   let stored;
   const selected = { provider: "other", id: "other-model" };
   const ctx = {
+    mode: "tui",
     model: selected,
     isIdle: () => true,
     sessionManager: { getBranch() { throw new Error("Do not scan another provider's history"); } },
@@ -58,9 +66,9 @@ function assembly() {
   return { pi, provider, ctx, hooks, commands, registered, counters, notices, fetchBefore };
 }
 
-test("factory is inert, registers one native provider, one command and ONLY session_start", () => {
+test("factory is inert, registers one native provider, one command and only session lifecycle hooks", () => {
   const a = assembly();
-  assert.deepEqual([...a.hooks.keys()], ["session_start"]);
+  assert.deepEqual([...a.hooks.keys()], ["session_start", "session_shutdown"]);
   assert.deepEqual([...a.commands.keys()], ["workbuddy"]);
   assert.equal(a.registered.length, 1);
   assert.equal(a.registered[0].id, "workbuddy");
@@ -72,7 +80,7 @@ test("factory is inert, registers one native provider, one command and ONLY sess
 
 test("startup refreshes once even with another model selected, without touching its history or selection", async () => {
   const a = assembly();
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   assert.equal(a.counters.catalog, 1);
   assert.equal(a.counters.refresh, 1);
   assert.equal(a.counters.selected, 0);
@@ -82,7 +90,7 @@ test("startup refreshes once even with another model selected, without touching 
 
 test("ordinary turns under other providers have no WorkBuddy callback to dispatch", async () => {
   const a = assembly();
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   const before = { ...a.counters };
   const events = ["before_agent_start", "agent_start", "turn_start", "context",
     "context_with_system", "before_provider_headers", "before_provider_request",
@@ -101,7 +109,7 @@ test("ordinary turns under other providers have no WorkBuddy callback to dispatc
 test("unconfigured startup does not request credentials, refresh a directory, or send inference", async () => {
   const a = assembly();
   a.ctx.modelRegistry.hasConfiguredAuth = () => false;
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   assert.equal(a.counters.refresh, 0);
   assert.equal(a.counters.catalog, 0);
 });
@@ -111,7 +119,7 @@ test("offline startup explicitly requests cache-only refresh", async () => {
   process.env.PI_OFFLINE = "1";
   try {
     const a = assembly();
-    await a.hooks.get("session_start")({}, a.ctx);
+    await startSession(a);
     assert.equal(a.counters.refresh, 1);
     assert.equal(a.counters.catalog, 0);
   } finally {
@@ -139,7 +147,7 @@ test("startup failures remain local and sanitized; other model never changes", a
   a.ctx.modelRegistry.refresh = async () => ({ aborted: false, errors: new Map([
     ["workbuddy", new WorkbuddyError("http", "SYNTHETIC_PRIVATE_BODY", { status: 403, businessCode: 11212 })],
   ]) });
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   assert.equal(a.notices.length, 1);
   assert.match(a.notices[0].message, /HTTP 403/);
   assert.doesNotMatch(a.notices[0].message, /SYNTHETIC_PRIVATE_BODY/);
@@ -150,7 +158,7 @@ test("cancelled startup does not emit misleading failure notifications", async (
   const a = assembly();
   a.ctx.signal = AbortSignal.abort();
   a.ctx.modelRegistry.refresh = async () => { throw new Error("cancelled"); };
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   assert.equal(a.notices.length, 0);
 });
 
@@ -169,7 +177,7 @@ test("explicit refresh waits for idle and does not register any additional event
   await a.commands.get("workbuddy").handler("refresh", a.ctx);
   assert.equal(waits, 1);
   assert.equal(a.counters.catalog, 1);
-  assert.deepEqual([...a.hooks.keys()], ["session_start"]);
+  assert.deepEqual([...a.hooks.keys()], ["session_start", "session_shutdown"]);
 });
 
 test("startup repairs only a still-selected idle WorkBuddy model, not a raced selection", async () => {
@@ -177,7 +185,7 @@ test("startup repairs only a still-selected idle WorkBuddy model, not a raced se
   const old = { ...a.provider.getModels()[0], id: "synthetic-live" };
   a.ctx.sessionManager = { getBranch: () => [] };
   a.ctx.model = old;
-  await a.hooks.get("session_start")({}, a.ctx);
+  await startSession(a);
   assert.equal(a.counters.selected, 1);
   a.ctx.model = { provider: "other", id: "new-choice" };
   await recoverSelectedModel(a.pi, a.provider, a.ctx, old);

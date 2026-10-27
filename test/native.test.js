@@ -90,10 +90,10 @@ test("refresh binds origin and retains account/rotated token metadata", async ()
   assert.equal(f.requests.length, 1);
 });
 
-test("native errors never echo server response, URL state, or tokens", async () => {
+test("native errors retain server response without weakening header validation", async () => {
   const f = scripted([new Response('{"code":11212,"msg":"SECRET_TOKEN"}', { status: 403 })]);
   await assert.rejects(createNativeClient({ fetch: f.fetch }).catalog(credential()), error =>
-    /403/.test(error.message) && /11212/.test(error.message) && !/SECRET/.test(error.message));
+    /403/.test(error.message) && /11212/.test(error.message) && error.message.includes('{"code":11212,"msg":"SECRET_TOKEN"}'));
   assert.throws(() => accountHeaders({ ...credential(), access: "token\r\nInjected: true" }), /Invalid/);
 });
 
@@ -169,10 +169,10 @@ test("SSE normalization handles byte-split Unicode and fragmented repeated tool 
   assert.equal(parsed[2].usage.prompt_tokens, 10);
 });
 
-test("malformed/truncated stream and explicit stream errors reject safely", async () => {
+test("malformed stream and explicit stream errors retain upstream data", async () => {
   for (const text of ['data: {oops}\n\n', 'data: {"error":{"message":"SECRET"}}\n\n']) {
     const source = new Response(text).body;
-    await assert.rejects(new Response(normalizeSse(source)).text(), error => !error.message.includes("SECRET"));
+    await assert.rejects(new Response(normalizeSse(source)).text(), error => error.message.includes(text.slice(6).trim()));
   }
 });
 
@@ -196,7 +196,7 @@ test("transport gzip, privacy/client headers and endpoint allowlist", async () =
   assert.equal(calls, 1);
 });
 
-test("chat errors sanitize secrets and preserve retry/overflow classifications", async () => {
+test("chat errors retain original bodies and preserve retry/overflow classifications", async () => {
   for (const [status, code] of [[429, 12003], [400, "context_length_exceeded"]]) {
     const f = createChatFetch({ fetch: async () => new Response(JSON.stringify({ error: { code, message: "SECRET" } }), {
       status, headers: { "Retry-After": "2" },
@@ -204,9 +204,9 @@ test("chat errors sanitize secrets and preserve retry/overflow classifications",
     const response = await f(ORIGIN + "/v2/chat/completions", { method: "POST", body: "{}" });
     assert.equal(response.status, status);
     assert.equal(response.headers.get("retry-after"), "2");
-    const body = await response.text();
-    assert.ok(!body.includes("SECRET"));
-    if (status === 400) assert.match(body, /context_length_exceeded/);
+    const body = await response.json();
+    assert.equal(body.error.message, JSON.stringify({ error: { code, message: "SECRET" } }));
+    assert.equal(body.error.code, code);
   }
 });
 

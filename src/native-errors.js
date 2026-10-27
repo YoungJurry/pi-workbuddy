@@ -1,4 +1,4 @@
-// Only explicitly allowlisted diagnostic fields may reach the UI. Never stringify upstream errors.
+// Local validation diagnostics stay concise; upstream failures retain their response text.
 const REASONS = {
   "credentials": "Credentials are missing or bound to a different endpoint; use /login.",
   "account-domain": "The account domain is not supported by this provider.",
@@ -39,10 +39,9 @@ export function describeFailure(error) {
     for (const [name, value] of Object.entries({ total, accepted, endpoint, disabled, toolLess, unavailable, invalid, duplicate, excluded })) {
       if (Number.isSafeInteger(value) && value >= 0) fields.push(name + "=" + value);
     }
-    const hint = current.diagnosticCode === "http" && businessCode === 12403 ?
-      " WorkBuddy could not parse the client version/User-Agent; reload the updated extension." : "";
-    return "[" + current.diagnosticCode + "] " + REASONS[current.diagnosticCode] +
-      (fields.length ? " (" + fields.join(", ") + ")" : "") + hint;
+    const reason = ["http", "invalid-json"].includes(current.diagnosticCode) ? current.message : REASONS[current.diagnosticCode];
+    return "[" + current.diagnosticCode + "] " + reason +
+      (fields.length ? " (" + fields.join(", ") + ")" : "");
   }
-  return "[unknown] Catalog refresh failed. No upstream error text was displayed to protect credentials.";
+  return error instanceof Error ? error.message : String(error ?? "Catalog refresh failed.");
 }

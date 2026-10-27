@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { ORIGIN, limitedJson } from "./native-client.js";
+import { ORIGIN, limitedText } from "./native-client.js";
 import { CLIENT_HEADERS } from "./client-identity.js";
 
 // Normalize complete SSE frames, never individual TCP/UTF-8 chunks.
@@ -16,9 +16,9 @@ export function normalizeSse(body) {
     const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
     if (!data || data.trim() === "[DONE]") return encoder.encode(text + "\n\n");
     let value;
-    try { value = JSON.parse(data); } catch { throw new Error("WorkBuddy returned malformed SSE JSON."); }
-    if (value.error || (typeof value.code === "number" && value.code !== 0)) {
-      throw new Error("WorkBuddy reported a stream error.");
+    try { value = JSON.parse(data); } catch { throw new Error("WorkBuddy returned malformed SSE JSON: " + data); }
+    if (value?.error || (value?.code !== undefined && value.code !== 0)) {
+      throw new Error(data);
     }
     for (const choice of value.choices ?? []) {
       for (const call of choice.delta?.tool_calls ?? []) {
@@ -87,23 +87,33 @@ export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = tr
     } catch {
       throw new Error(request.signal.aborted ? "WorkBuddy request cancelled." : "WorkBuddy connection failed.");
     }
-    if (!response.ok) {
-      let code;
-      try { const value = await limitedJson(response); code = value?.error?.code ?? value?.code; } catch {}
-      // Keep status, safe business code, and retry metadata; never expose upstream bodies/tokens.
-      const contextOverflow = code === "context_length_exceeded";
-      const message = contextOverflow ? "context_length_exceeded" : "WorkBuddy request failed (HTTP " + response.status +
-        (typeof code === "number" ? "; code " + code : "") + ").";
-      const outHeaders = new Headers({ "Content-Type": "application/json" });
-      const retry = response.headers.get("retry-after");
-      if (retry) outHeaders.set("Retry-After", retry);
-      return new Response(JSON.stringify({ error: { message, ...(contextOverflow ? { code } : {}) } }), {
-        status: response.status, headers: outHeaders,
+    if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+      let text;
+      try { text = await limitedText(response); }
+      catch (error) { text = error.message; } // Report read/size failures rather than an SDK connection error.
+      let value;
+      try { value = JSON.parse(text); } catch { /* Plain text/HTML errors are preserved too. */ }
+      const code = value?.error?.code ?? value?.code;
+      // Put the COMPLETE response text in message: the OpenAI SDK otherwise drops
+      // WorkBuddy's msg/displayMsg/displayTips and arbitrary extra fields.
+      const message = text || "WorkBuddy HTTP " + response.status + ": " +
+        (response.statusText || "Empty response body");
+      const error = { message, ...(code !== undefined ? { code } : {}) };
+      const outHeaders = new Headers(response.headers);
+      outHeaders.delete("content-encoding");
+      outHeaders.delete("content-length");
+      if (!response.ok) {
+        outHeaders.set("Content-Type", "application/json");
+        return new Response(JSON.stringify({ error }), {
+          status: response.status, statusText: response.statusText, headers: outHeaders,
+        });
+      }
+      // Some gateways return HTTP 200 with a JSON business error. Surface it as
+      // an SSE error so the SDK keeps both the real HTTP status and error text.
+      outHeaders.set("Content-Type", "text/event-stream");
+      return new Response("data: " + JSON.stringify({ error }) + "\n\n", {
+        status: response.status, statusText: response.statusText, headers: outHeaders,
       });
-    }
-    if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
-      await response.body?.cancel();
-      throw new Error("WorkBuddy did not return an SSE stream.");
     }
     const responseHeaders = new Headers(response.headers);
     // The fetch implementation has already decoded transport compression.

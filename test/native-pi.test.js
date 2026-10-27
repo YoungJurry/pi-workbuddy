@@ -177,7 +177,7 @@ hostTest("Pi host: empty valid response versus truncated stream", async () => {
   }
 });
 
-hostTest("Pi host: HTTP errors remain sanitized and abort terminates inference", async () => {
+hostTest("Pi host: HTTP errors retain upstream text and abort terminates inference", async () => {
   const { models, model } = await setup(async (_url, { signal }) => {
     await new Promise((resolve, reject) => {
       if (signal.aborted) reject(new Error("aborted"));
@@ -191,8 +191,29 @@ hostTest("Pi host: HTTP errors remain sanitized and abort terminates inference",
   const failed = await setup(async () => new Response('{"error":{"message":"SECRET_TOKEN","code":12003}}', { status: 429 }));
   const result = await failed.models.completeSimple(failed.model, { messages: [user] }, { maxRetries: 0 });
   assert.equal(result.stopReason, "error");
-  assert.ok(!result.errorMessage.includes("SECRET_TOKEN"));
+  assert.ok(result.errorMessage.includes("SECRET_TOKEN"));
   assert.match(result.errorMessage, /429/);
+});
+
+hostTest("Pi host: official error details reach the final assistant message", async () => {
+  const raw = JSON.stringify({ code: 14003, msg: "too many requests", requestId: "synthetic-request",
+    displayMsg: { zh: "模型繁忙，请换模型或稍后重试" }, displayTips: { zh: "这个模型当前请求量饱和，与你的网络无关。" } });
+  const permission = JSON.stringify({ code: 11158, msg: "model is not allowed for personal_free_user",
+    displayMsg: { zh: "当前账号类型暂不支持该模型。" }, requestId: "synthetic-permission" });
+  for (const [response, expected] of [
+    [() => new Response(raw, { status: 429 }), ["14003", "too many requests", "模型繁忙，请换模型或稍后重试", "与你的网络无关", "synthetic-request"]],
+    [() => new Response(permission, { status: 400 }), ["11158", "personal_free_user", "当前账号类型暂不支持该模型。", "synthetic-permission"]],
+    [() => new Response(raw, { headers: { "Content-Type": "application/json" } }), ["14003", "模型繁忙，请换模型或稍后重试", "synthetic-request"]],
+    [() => sse([JSON.parse(raw)]), ["14003", "模型繁忙，请换模型或稍后重试", "synthetic-request"]],
+    [() => sse([chunk({ content: "partial" }), JSON.parse(raw)]), ["14003", "模型繁忙，请换模型或稍后重试"]],
+    [() => new Response("<html>Upstream temporarily unavailable</html>", { status: 502 }), ["502", "<html>Upstream temporarily unavailable</html>"]],
+  ]) {
+    const { models, model } = await setup(async () => response());
+    const result = await models.completeSimple(model, { messages: [user] }, { maxRetries: 0 });
+    assert.equal(result.stopReason, "error", result.errorMessage);
+    for (const text of expected) assert.ok(result.errorMessage.includes(text), result.errorMessage);
+    assert.doesNotMatch(result.errorMessage, /SYNTHETIC_ACCESS|SYNTHETIC_REFRESH/);
+  }
 });
 
 hostTest("Pi host: full DeepSeek context, image input, tools, and low/high/max reach the wire", async () => {

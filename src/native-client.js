@@ -34,8 +34,9 @@ export function accountHeaders(credential) {
   return headers;
 }
 
-export async function limitedJson(response, limit = LIMIT) {
-  if (!response.body) throw new WorkbuddyError("empty-response", "WorkBuddy returned an empty response.");
+// Keep a resource limit, not a redaction limit. Errors retain the original UTF-8 text.
+export async function limitedText(response, limit = LIMIT) {
+  if (!response.body) return "";
   const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
@@ -54,7 +55,13 @@ export async function limitedJson(response, limit = LIMIT) {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+export async function limitedJson(response, limit = LIMIT) {
+  const text = await limitedText(response, limit);
+  if (!text) throw new WorkbuddyError("empty-response", "WorkBuddy returned an empty response.");
+  try { return JSON.parse(text); }
   catch { throw new WorkbuddyError("invalid-json", "WorkBuddy returned invalid JSON."); }
 }
 
@@ -111,17 +118,17 @@ export function createNativeClient({
       if (timed.aborted) throw new WorkbuddyError("request-timeout", "WorkBuddy request timed out.");
       throw new WorkbuddyError("network", "Cannot reach WorkBuddy. Check your connection or retry.");
     }
+    const text = await limitedText(response);
     let envelope;
-    try { envelope = await limitedJson(response); }
-    catch (error) {
-      if (!response.ok) throw new WorkbuddyError("http", "WorkBuddy request failed (HTTP " + response.status + ").", { status: response.status });
-      throw error;
+    try { envelope = JSON.parse(text); } catch {
+      if (response.ok) throw new WorkbuddyError(text ? "invalid-json" : "empty-response",
+        text || "WorkBuddy returned an empty response.");
     }
-    if (pendingCode !== undefined && envelope?.code === pendingCode) return undefined;
-    if (!response.ok || (envelope?.code !== undefined && envelope.code !== 0)) {
-      const code = typeof envelope?.code === "number" ? "; code " + envelope.code : "";
-      throw new WorkbuddyError("http", "WorkBuddy request failed (HTTP " + response.status + code + ").", {
-        status: response.status, businessCode: typeof envelope?.code === "number" ? envelope.code : undefined,
+    if (response.ok && pendingCode !== undefined && envelope?.code === pendingCode) return undefined;
+    if (!response.ok || envelope?.error || (envelope?.code !== undefined && envelope.code !== 0)) {
+      throw new WorkbuddyError("http", "WorkBuddy HTTP " + response.status + ": " +
+        (text || response.statusText || "Empty response body"), {
+        status: response.status, businessCode: envelope?.error?.code ?? envelope?.code,
       });
     }
     if (!envelope || typeof envelope !== "object" || envelope.data === undefined) {

@@ -63,12 +63,12 @@ test("remote publication persists only projected metadata and never raw server f
   assert.doesNotMatch(JSON.stringify(persisted), /PRIVATE|SYNTHETIC|mock-user|extraHeaders|description|prompts/);
 });
 
-test("failed online refresh retains restored models and a sanitized error", async () => {
+test("failed online refresh retains restored models and the error message", async () => {
   const provider = createWorkbuddyProvider({ api, client: { async catalog() { throw new Error("PRIVATE_TOKEN"); } } });
   await assert.rejects(provider.refreshModels(context({ allowNetwork: true, stored: entry() })));
   assert.equal(provider.getCatalogStatus().source, "cache");
   assert.equal(provider.getModels()[0].id, "deepseek-v4.1-flash");
-  assert.doesNotMatch(provider.getCatalogStatus().lastError, /PRIVATE_TOKEN/);
+  assert.equal(provider.getCatalogStatus().lastError, "PRIVATE_TOKEN");
 });
 
 test("malformed and obsolete SG-only caches cannot block online recovery", async () => {

@@ -142,7 +142,7 @@ test("unforced host catalog enumeration restores cache without fetching /v3/conf
   assert.equal(provider.getModels()[0].id, "cached-model");
 });
 
-test("startup failures remain local and sanitized; other model never changes", async () => {
+test("startup failures retain upstream messages; other model never changes", async () => {
   const a = assembly();
   a.ctx.modelRegistry.refresh = async () => ({ aborted: false, errors: new Map([
     ["workbuddy", new WorkbuddyError("http", "SYNTHETIC_PRIVATE_BODY", { status: 403, businessCode: 11212 })],
@@ -150,7 +150,7 @@ test("startup failures remain local and sanitized; other model never changes", a
   await startSession(a);
   assert.equal(a.notices.length, 1);
   assert.match(a.notices[0].message, /HTTP 403/);
-  assert.doesNotMatch(a.notices[0].message, /SYNTHETIC_PRIVATE_BODY/);
+  assert.match(a.notices[0].message, /SYNTHETIC_PRIVATE_BODY/);
   assert.equal(a.counters.selected, 0);
 });
 

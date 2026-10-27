@@ -1,6 +1,6 @@
 // Pinned to the statically inspected WorkBuddy AI 5.8.4 desktop artifact.
 // See docs/client-identity.md. The extension version is local metadata, not wire identity.
-export const EXTENSION_VERSION = "0.1.2";
+export const EXTENSION_VERSION = "0.1.3";
 export const WORKBUDDY_PROTOCOL_VERSION = "5.8.4";
 export const WORKBUDDY_CLI_VERSION = "2.161.0";
 export const USER_AGENT = "WorkBuddy/" + WORKBUDDY_PROTOCOL_VERSION +

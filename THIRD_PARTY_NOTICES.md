@@ -17,7 +17,7 @@ The following files retain or adapt upstream source:
 
 - `src/client-identity.js`: separates this derivative's local version from wire identity. Since 0.1.1, uses a client-header profile based on static inspection of the official WorkBuddy AI 5.8.4 desktop artifact rather than the upstream plugin's self-identifying headers; provenance is in `docs/client-identity.md`.
 - `src/native-client.js`: retains browser login, polling, token refresh, account-header validation and authenticated catalog access; removes credit-reader imports and methods and applies the shared client-header profile.
-- `src/native-errors.js`: retains allowlisted sanitized diagnostics; removes unused credit-reader categories.
+- `src/native-errors.js`: retains local validation diagnostics and removes unused credit-reader categories; since 0.1.3, upstream error text is preserved instead of redacted. HTTP and SSE error propagation in the client/transport was updated accordingly.
 - `src/native-transport.js`: retains provider-scoped transport, gzip and SSE adaptation; replaces Pi-specific IDE fields and UA suffix with the shared desktop header profile.
 - `src/native-models.js`, `src/native-capabilities.js`, `src/native-limits.js`: retain upstream metadata projection, capability references and output-budget protections. References are upstream's optimistic metadata policy, not newly performed live service verification.
 - `src/native-catalog-cache.js`: retains account-scoped public metadata caching.

@@ -124,9 +124,8 @@ test("session correlation and fresh request IDs remain unchanged by the client p
   assert.notEqual(ids[0], ids[1]);
 });
 
-test("12403 diagnostics explain the version header without exposing the server body", () => {
-  const text = describeFailure(new WorkbuddyError("http", "SECRET_BODY", { status: 400, businessCode: 12403 }));
-  assert.match(text, /User-Agent/);
+test("12403 diagnostics retain the official version error", () => {
+  const text = describeFailure(new WorkbuddyError("http", "Cannot parse User-Agent version", { status: 400, businessCode: 12403 }));
+  assert.match(text, /Cannot parse User-Agent version/);
   assert.match(text, /12403/);
-  assert.doesNotMatch(text, /SECRET_BODY/);
 });

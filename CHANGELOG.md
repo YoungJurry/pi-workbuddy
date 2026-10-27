@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3
+
+- Preserve complete upstream HTTP error bodies, including WorkBuddy's business codes, localized messages/tips, request IDs, and extra fields, instead of redacting them.
+- Surface SSE error data and HTTP 200 JSON business errors in Pi's final assistant error message.
+- Retain official errors from login, token refresh, catalog refresh, and status diagnostics.
+- Keep endpoint/account validation, redirect restrictions, request privacy headers, retry metadata, cancellation, and resource/output limits unchanged.
+- Add offline regressions for permission/rate-limit responses, plain text/HTML, long errors, fragmented and mid-stream errors, and actual Pi host error propagation.
+- Document that upstream error bodies are no longer redacted and may contain sensitive data echoed by the service.
+
 ## 0.1.2
 
 - Refresh the catalog in the background during interactive startup, using the cached/fallback models immediately instead of blocking entry into the session.

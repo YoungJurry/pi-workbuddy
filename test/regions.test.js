@@ -195,7 +195,7 @@ test("each native login, refresh and catalog uses only its regional host and pro
     // Account lookup is optional per protocol; the other roles are required and never duplicated.
     assert.equal(seen.state, 1);
     assert.equal(seen.token, 1);
-    assert.ok(seen.account <= 1);
+    assert.equal(seen.account, 1);
     assert.equal(seen.refresh, 1);
     assert.equal(seen.catalog, 1);
     assert.ok(requests.length >= 5);
@@ -384,6 +384,21 @@ test("providers pin models and auth to their region, ignoring foreign model endp
       otherRegion(region).baseUrl + samePath]) {
       await assert.rejects(sent[2].fetch(endpoint, { method: "POST", body: "{}" }), /untrusted endpoint/);
     }
+  }
+});
+
+test("provider OAuth rejects injected clients returning foreign login or refresh credentials", async () => {
+  for (const region of regions) {
+    let refreshCalls = 0;
+    const provider = createWorkbuddyProvider({ region, api: noInference, client: {
+      async login() { return credential(otherRegion(region)); },
+      async refresh() { refreshCalls++; return credential(otherRegion(region)); },
+    } });
+    await assert.rejects(provider.auth.oauth.login({ notify() {} }), /different endpoint/);
+    await assert.rejects(provider.auth.oauth.refresh(credential(otherRegion(region))), /different endpoint/);
+    assert.equal(refreshCalls, 0, "invalid input must be rejected before the injected client");
+    await assert.rejects(provider.auth.oauth.refresh(credential(region)), /different endpoint/);
+    assert.equal(refreshCalls, 1, "foreign refresh output must not reach the credential store");
   }
 });
 

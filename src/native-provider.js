@@ -53,10 +53,19 @@ export function createWorkbuddyProvider({ api, region = INTL_REGION, client = cr
     auth: {
       oauth: {
         name: region.name,
-        loginLabel: "Sign in with your " + region.name + (region === INTL_REGION ? " international" : " domestic") + " account",
+        loginLabel: "Sign in with your " + region.name + (region.id === INTL_REGION.id ? " international" : " domestic") + " account",
         isSubscription: true,
-        login: interaction => client.login(interaction),
-        refresh: (credential, signal) => client.refresh(credential, signal),
+        async login(interaction) {
+          const credential = await client.login(interaction);
+          accountHeaders(credential, region); // Also bind credentials from injected clients before persistence.
+          return credential;
+        },
+        async refresh(credential, signal) {
+          accountHeaders(credential, region);
+          const refreshed = await client.refresh(credential, signal);
+          accountHeaders(refreshed, region);
+          return refreshed;
+        },
         toAuth: async credential => ({
           apiKey: credential.access, headers: accountHeaders(credential, region), baseUrl: region.baseUrl,
         }),

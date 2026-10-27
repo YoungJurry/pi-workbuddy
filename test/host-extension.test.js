@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { resolve, join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { createWorkbuddyProvider } from "../src/native-provider.js";
+import { INTL_REGION, CN_REGION } from "../src/regions.js";
 
 const aiDist = process.env.PI_AI_TEST_PATH;
 const agentDist = process.env.PI_AGENT_TEST_PATH || (aiDist ? resolve(aiDist, "../../../../dist") : undefined);
@@ -17,9 +18,12 @@ hostTest("Pi 1.4 loader loads the actual package without installation, credentia
   assert.equal(loaded.extensions.length, 1);
   assert.deepEqual([...loaded.extensions[0].handlers.keys()], ["session_start", "session_shutdown"]);
   assert.equal(loaded.extensions[0].tools.size, 0);
-  assert.deepEqual([...loaded.extensions[0].commands.keys()], ["workbuddy"]);
-  assert.equal(loaded.runtime.pendingNativeProviderRegistrations.length, 1);
-  assert.equal(loaded.runtime.pendingNativeProviderRegistrations[0].provider.id, "workbuddy");
+  assert.deepEqual([...loaded.extensions[0].commands.keys()], ["workbuddy", "workbuddy-cn"]);
+  assert.equal(loaded.runtime.pendingNativeProviderRegistrations.length, 2);
+  assert.deepEqual(loaded.runtime.pendingNativeProviderRegistrations.map(({ provider }) => provider.id), ["workbuddy", "workbuddy-cn"]);
+  assert.deepEqual(loaded.runtime.pendingNativeProviderRegistrations.map(({ provider }) => provider.baseUrl),
+    [INTL_REGION.baseUrl, CN_REGION.baseUrl]);
+  assert.notEqual(INTL_REGION.baseUrl, CN_REGION.baseUrl);
   assert.equal(globalThis.fetch, before);
 });
 

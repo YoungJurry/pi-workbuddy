@@ -7,14 +7,15 @@ function definition(model) {
 }
 
 export async function recoverSelectedModel(pi, provider, ctx, selected = ctx.model) {
-  if (!selected || selected.provider !== "workbuddy" || ctx.model !== selected || ctx.isIdle?.() === false) return;
+  const providerId = provider.id ?? "workbuddy";
+  if (!selected || selected.provider !== providerId || ctx.model !== selected || ctx.isIdle?.() === false) return;
   let previousId = selected.id;
-  const placeholder = selected.name === "WorkBuddy Default (fallback)";
+  const placeholder = selected.name === (provider.fallbackName ?? "WorkBuddy Default (fallback)");
   if (placeholder) {
     const previous = ctx.sessionManager?.getBranch?.().findLast(entry => entry.type === "model_change");
-    if (previous?.provider === "workbuddy" && typeof previous.modelId === "string") previousId = previous.modelId;
+    if (previous?.provider === providerId && typeof previous.modelId === "string") previousId = previous.modelId;
   }
-  const id = /^deepseek-/i.test(previousId) && /-sg$/i.test(previousId) ? previousId.slice(0, -3) : previousId;
+  const id = provider.excludeSg !== false && /^deepseek-/i.test(previousId) && /-sg$/i.test(previousId) ? previousId.slice(0, -3) : previousId;
   const replacement = provider.getModels().find(model => model.id === id) ??
     (placeholder ? provider.getModels().find(model => model.id === selected.id) : undefined);
   if (!replacement || definition(selected) === definition(replacement)) return;
@@ -26,19 +27,20 @@ export async function recoverSelectedModel(pi, provider, ctx, selected = ctx.mod
 export async function refreshWorkbuddyCatalog(pi, provider, ctx, signal = ctx.signal) {
   if (signal?.aborted) return false;
   const selected = ctx.model;
+  const id = provider.id ?? "workbuddy";
   try {
     const result = await ctx.modelRegistry.refresh({
-      providers: ["workbuddy"], force: true, signal,
+      providers: [id], force: true, signal,
       ...(process.env.PI_OFFLINE !== undefined ? { allowNetwork: false } : {}),
     });
     if (result.aborted || signal?.aborted) return false;
-    if (result.errors.has("workbuddy")) throw result.errors.get("workbuddy");
+    if (result.errors.has(id)) throw result.errors.get(id);
     await recoverSelectedModel(pi, provider, ctx, selected);
     return true;
   } catch (error) {
     if (!signal?.aborted) {
-      ctx.ui?.notify?.("WorkBuddy catalog refresh failed: " + describeFailure(error) +
-        " Cached models, if available, were retained. Use /workbuddy refresh to retry. No chat request sent.", "warning");
+      ctx.ui?.notify?.((provider.name ?? "WorkBuddy") + " catalog refresh failed: " + describeFailure(error) +
+        " Cached models, if available, were retained. Use /" + id + " refresh to retry. No chat request sent.", "warning");
     }
     return false;
   }
@@ -46,6 +48,7 @@ export async function refreshWorkbuddyCatalog(pi, provider, ctx, signal = ctx.si
 
 /** No agent_end/message_end/model_select/context/provider-request handlers. */
 export function registerNativeLifecycle(pi, provider) {
+  const providers = Array.isArray(provider) ? provider : [provider];
   let activeRefresh;
   const cancelRefresh = () => {
     activeRefresh?.abort();
@@ -54,11 +57,15 @@ export function registerNativeLifecycle(pi, provider) {
 
   pi.on("session_start", (_event, ctx) => {
     cancelRefresh();
-    if (!ctx.modelRegistry.hasConfiguredAuth(provider.getModels()[0])) return;
+    const configured = providers.filter(item => ctx.modelRegistry.hasConfiguredAuth(item.getModels()[0]));
+    if (!configured.length) return;
     const controller = new AbortController();
     activeRefresh = controller;
     const signal = ctx.signal ? AbortSignal.any([ctx.signal, controller.signal]) : controller.signal;
-    const refresh = refreshWorkbuddyCatalog(pi, provider, ctx, signal).finally(() => {
+    // A disposed UI can throw while reporting one region's failure. Keep the
+    // controller alive until every region settles, so shutdown still cancels
+    // the others and headless startup never finishes discovery prematurely.
+    const refresh = Promise.allSettled(configured.map(item => refreshWorkbuddyCatalog(pi, item, ctx, signal))).finally(() => {
       if (activeRefresh === controller) activeRefresh = undefined;
     });
     // Headless callers still wait for discovery before their first prompt.

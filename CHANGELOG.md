@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.0
+
+- Add a second native Provider, `workbuddy-cn` (WorkBuddy AI CN), alongside the existing international `workbuddy` Provider.
+- Keep separate regional profiles with their own fixed trusted HTTPS origins, account domains, and chat endpoints; reject cross-region credentials, domains, and endpoints.
+- Isolate credentials and catalog caches by region and account. International credentials, caches, and model settings are not migrated or reused for CN; CN requires its own `/login` selection.
+- Keep the international Provider ID, display name, command, cache keys, and default filtering unchanged, so existing international installs upgrade without re-login or data migration.
+- Add `/workbuddy-cn [status|doctor|refresh]`; keep `/workbuddy [status|doctor|refresh]` for the international region. Models use the `workbuddy/` or `workbuddy-cn/` prefix respectively.
+- Keep one shared pair of `session_start`/`session_shutdown` hooks for both regions; startup refreshes configured accounts in parallel and never contacts CN when no CN account is configured.
+- Preserve the background interactive refresh, foreground headless refresh, and `PI_OFFLINE` cache-only contracts.
+- Preserve existing international behavior and filtering defaults. The DeepSeek `-sg` exclusion stays an explicit international policy; CN does not inherit it. Eligible CN models and reasoning levels are projected from the catalog and capability supplements.
+- Pin CN to the statically verified official WorkBuddy AI CN 5.8.3 profile: origin `https://www.workbuddy.cn`, chat `/v2/chat/completions`, catalog `/v3/config`, login platform `workbuddy`, and `User-Agent: WorkBuddy/5.8.3 WorkBuddy/5.8.3 CLI/2.161.0` with `X-IDE-Version: 5.8.3`. International identity stays on 5.8.4.
+- Use CN's selected account-scoped authentication flow: read `/v2/plugin/account` without a state query, retain the international `/v2/plugin/login/account?state=...` path, and propagate the server-issued account domain during login lookup.
+- Keep cancellation for all regional refreshes until the complete batch settles, even if a disposed UI throws while reporting one region's failure.
+- Scope CN to regular accounts on the official production SaaS origin: no cross-origin fallback, staging, self-hosted deployment, or wildcard SSO.
+- Document the CN protocol provenance in [docs/cn-protocol.md](docs/cn-protocol.md); the CN path is statically verified but has not been validated against the real service.
+- Keep unredacted upstream error bodies and the lightweight boundary: no proxy, CLI, resident task, or tools.
+- Document that offline tests and static review do not prove real CN service availability or successful real-account CN login/inference.
+
 ## 0.1.3
 
 - Preserve complete upstream HTTP error bodies, including WorkBuddy's business codes, localized messages/tips, request IDs, and extra fields, instead of redacting them.

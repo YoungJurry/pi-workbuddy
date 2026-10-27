@@ -1,11 +1,10 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { WorkbuddyError } from "./native-errors.js";
-import { CLIENT_HEADERS } from "./client-identity.js";
+import { INTL_REGION } from "./regions.js";
 
-export const ORIGIN = "https://www.workbuddy.ai";
-export const BASE_URL = ORIGIN + "/v2";
-const BROWSER_ORIGINS = new Set([ORIGIN, "https://workbuddy.ai", "https://www.codebuddy.ai"]);
-const ACCOUNT_DOMAINS = new Set(["www.workbuddy.ai", "workbuddy.ai", "www.codebuddy.ai"]);
+// Retain the original exports for international callers and existing caches.
+export const ORIGIN = INTL_REGION.origin;
+export const BASE_URL = INTL_REGION.baseUrl;
 const LIMIT = 2 * 1024 * 1024;
 
 export function safeHeader(value, name = "account metadata") {
@@ -15,16 +14,16 @@ export function safeHeader(value, name = "account metadata") {
   return value;
 }
 
-export function accountHeaders(credential) {
-  if (credential?.type !== "oauth" || credential.origin !== ORIGIN) {
+export function accountHeaders(credential, region = INTL_REGION) {
+  if (credential?.type !== "oauth" || credential.origin !== region.origin) {
     throw new WorkbuddyError("credentials", "WorkBuddy credentials are missing or belong to a different endpoint. Run /login.");
   }
-  validDomain({ domain: credential.domain });
+  validDomain({ domain: credential.domain }, region);
   const headers = {
-    ...CLIENT_HEADERS,
+    ...region.clientHeaders,
     Authorization: "Bearer " + safeHeader(credential.access, "access token"),
     "X-User-Id": safeHeader(credential.userId, "user ID"),
-    "X-Domain": credential.domain || "www.workbuddy.ai",
+    "X-Domain": credential.domain || region.domain,
     "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
   };
   if (credential.enterpriseId) {
@@ -65,15 +64,15 @@ export async function limitedJson(response, limit = LIMIT) {
   catch { throw new WorkbuddyError("invalid-json", "WorkBuddy returned invalid JSON."); }
 }
 
-function validDomain(token) {
-  if (token.domain && !ACCOUNT_DOMAINS.has(token.domain)) {
+function validDomain(token, region) {
+  if (token.domain && !region.accountDomains.includes(token.domain)) {
     throw new WorkbuddyError("account-domain", "WorkBuddy returned an unsupported account domain.");
   }
 }
 
-function tokenCredential(token, account, previous, now) {
+function tokenCredential(token, account, previous, now, region) {
   if (!token || typeof token !== "object") throw new Error("WorkBuddy returned no token.");
-  validDomain(token);
+  validDomain(token, region);
   const access = safeHeader(token.accessToken, "access token");
   const refresh = token.refreshToken === undefined ? previous?.refresh || "" : token.refreshToken;
   if (refresh !== "") safeHeader(refresh, "refresh token");
@@ -83,8 +82,8 @@ function tokenCredential(token, account, previous, now) {
     throw new Error("WorkBuddy returned missing or expired token expiry. Please sign in again.");
   }
   return {
-    type: "oauth", origin: ORIGIN, access, refresh, expires,
-    domain: token.domain || previous?.domain || "www.workbuddy.ai",
+    type: "oauth", origin: region.origin, access, refresh, expires,
+    domain: token.domain || previous?.domain || region.domain,
     userId: safeHeader(String(account?.uid ?? previous?.userId ?? ""), "user ID"),
     ...(account?.enterpriseId || previous?.enterpriseId ?
       { enterpriseId: safeHeader(String(account?.enterpriseId ?? previous.enterpriseId)) } : {}),
@@ -92,20 +91,20 @@ function tokenCredential(token, account, previous, now) {
 }
 
 export function createNativeClient({
-  fetch: fetchImpl = globalThis.fetch, requestTimeoutMs = 15000,
+  region = INTL_REGION, fetch: fetchImpl = globalThis.fetch, requestTimeoutMs = 15000,
   loginTimeoutMs = 300000, pollIntervalMs = 1000, now = Date.now,
 } = {}) {
   async function request(path, { method = "GET", credential, signal, pendingCode, headers = {}, body = {} } = {}) {
-    const url = new URL(path, ORIGIN);
-    if (url.origin !== ORIGIN || url.username || url.password) throw new WorkbuddyError("endpoint", "Untrusted WorkBuddy endpoint.");
+    const url = new URL(path, region.origin);
+    if (url.origin !== region.origin || url.username || url.password) throw new WorkbuddyError("endpoint", "Untrusted WorkBuddy endpoint.");
     const timed = AbortSignal.timeout(requestTimeoutMs);
     const activeSignal = signal ? AbortSignal.any([signal, timed]) : timed;
     // Validate credential metadata before fetch so validation failures are not mislabeled as network errors.
     const requestHeaders = {
-      "Content-Type": "application/json", "X-Domain": "www.workbuddy.ai",
+      "Content-Type": "application/json", "X-Domain": region.domain,
       "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",
-      ...CLIENT_HEADERS,
-      ...(credential ? accountHeaders(credential) : {}), ...headers,
+      ...region.clientHeaders,
+      ...(credential ? accountHeaders(credential, region) : {}), ...headers,
     };
     let response;
     try {
@@ -142,13 +141,13 @@ export function createNativeClient({
       const deadline = AbortSignal.timeout(loginTimeoutMs);
       const signal = interaction.signal ? AbortSignal.any([interaction.signal, deadline]) : deadline;
       interaction.notify({ type: "progress", message: "Requesting WorkBuddy browser login…" });
-      const state = await request("/v2/plugin/auth/state?platform=workbuddy-ai", { method: "POST", signal });
+      const state = await request("/v2/plugin/auth/state?platform=" + encodeURIComponent(region.platform), { method: "POST", signal });
       if (typeof state?.state !== "string" || !state.state || state.state.length > 4096) {
         throw new Error("WorkBuddy returned an invalid login state.");
       }
       let authUrl;
       try { authUrl = new URL(state.authUrl); } catch { throw new Error("Invalid WorkBuddy login URL."); }
-      if (!BROWSER_ORIGINS.has(authUrl.origin) || authUrl.username || authUrl.password) {
+      if (!region.browserOrigins.includes(authUrl.origin) || authUrl.username || authUrl.password) {
         throw new Error("WorkBuddy returned an untrusted login URL.");
       }
       interaction.notify({ type: "auth_url", url: authUrl.href, instructions: "Sign in with your WorkBuddy account in the browser. Pi will wait; Escape cancels." });
@@ -161,27 +160,31 @@ export function createNativeClient({
       }
       // Fetch account before creating/storing any Pi credential.
       safeHeader(token.accessToken, "access token");
-      validDomain(token);
+      validDomain(token, region);
+      const accountPath = region.loginAccountPath + (region.loginAccountUsesState ? "?state=" + query : "");
       let account;
       while (!account) {
         signal.throwIfAborted();
-        account = await request("/v2/plugin/login/account?state=" + query, {
-          signal, pendingCode: 12151, headers: { Authorization: "Bearer " + token.accessToken },
+        account = await request(accountPath, {
+          signal, pendingCode: 12151, headers: {
+            Authorization: "Bearer " + token.accessToken,
+            "X-Domain": token.domain || region.domain,
+          },
         });
         if (!account) await sleep(pollIntervalMs, undefined, { signal });
       }
-      const credential = tokenCredential(token, account, undefined, now());
-      interaction.notify({ type: "info", message: "WorkBuddy login completed. Run /workbuddy refresh, then select a model with /model." });
+      const credential = tokenCredential(token, account, undefined, now(), region);
+      interaction.notify({ type: "info", message: region.name + " login completed. Run /" + region.id + " refresh, then select a model with /model." });
       return credential;
     },
     async refresh(credential, signal) {
-      accountHeaders(credential); // Validate binding before any I/O.
+      accountHeaders(credential, region); // Validate binding before any I/O.
       if (!credential.refresh) throw new Error("WorkBuddy did not issue a refresh token. Run /login again.");
       const token = await request("/v2/plugin/auth/token/refresh", {
         method: "POST", credential, signal,
         headers: { "X-Refresh-Token": safeHeader(credential.refresh), "X-Auth-Refresh-Source": "plugin" },
       });
-      return tokenCredential(token, undefined, credential, now());
+      return tokenCredential(token, undefined, credential, now(), region);
     },
     async catalog(credential, signal) {
       return request("/v3/config", { credential, signal });

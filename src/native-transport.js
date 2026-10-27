@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
-import { ORIGIN, limitedText } from "./native-client.js";
-import { CLIENT_HEADERS } from "./client-identity.js";
+import { limitedText } from "./native-client.js";
+import { INTL_REGION } from "./regions.js";
 
 // Normalize complete SSE frames, never individual TCP/UTF-8 chunks.
 export function normalizeSse(body) {
@@ -55,19 +55,23 @@ export function normalizeSse(body) {
   }));
 }
 
-export function createChatFetch({ fetch: fetchImpl = globalThis.fetch, gzip = true, sessionId } = {}) {
+export function createChatFetch({ region = INTL_REGION, fetch: fetchImpl = globalThis.fetch, gzip = true, sessionId } = {}) {
   const conversationId = sessionId || randomUUID();
   return async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
-    if (url.origin !== ORIGIN || url.pathname !== "/v2/chat/completions" || url.search ||
+    if (url.origin !== region.origin || url.pathname !== "/v2/chat/completions" || url.search ||
       url.username || url.password || request.method !== "POST") {
       throw new Error("Refusing to send WorkBuddy credentials to an untrusted endpoint.");
     }
     const headers = new Headers(request.headers);
+    const domain = headers.get("X-Domain");
+    if (domain && !region.accountDomains.includes(domain)) {
+      throw new Error("Refusing to send WorkBuddy credentials with a different account domain.");
+    }
     const requestId = randomUUID();
     for (const [key, value] of Object.entries({
-      ...CLIENT_HEADERS,
+      ...region.clientHeaders,
       "X-Conversation-ID": conversationId, "X-Conversation-Request-ID": requestId,
       "X-Conversation-Message-ID": requestId, "X-Request-ID": requestId,
       "X-Agent-Intent": "craft", "X-Product": "SaaS", "X-Requested-With": "XMLHttpRequest",

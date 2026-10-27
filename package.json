@@ -1,8 +1,8 @@
 {
   "name": "pi-workbuddy",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "private": true,
-  "description": "Lightweight native WorkBuddy AI international provider for Pi",
+  "description": "Lightweight native WorkBuddy AI international and China dual-region provider for Pi",
   "type": "module",
   "license": "MIT",
   "keywords": [

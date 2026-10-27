@@ -1,4 +1,4 @@
-import { BASE_URL } from "./native-client.js";
+import { INTL_REGION } from "./regions.js";
 import { WorkbuddyError } from "./native-errors.js";
 import { resolveTokenLimits } from "./native-limits.js";
 import { getVendorCapabilities } from "./native-capabilities.js";
@@ -6,7 +6,7 @@ const COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
 const validId = value => typeof value === "string" && value.length <= 256 && /^[\w./:-]+$/.test(value);
 
-export function projectModels(config) {
+export function projectModels(config, region = INTL_REGION) {
   if (!Array.isArray(config?.models) || config.models.length > 2000) {
     throw new WorkbuddyError("catalog-shape", "Invalid WorkBuddy model catalog.");
   }
@@ -19,7 +19,7 @@ export function projectModels(config) {
     // Report only counts, never model URLs, API keys, remote instructions, or full catalog bodies.
     if (!validId(item?.id)) { counts.invalid++; continue; }
     const normalizedId = item.id.toLowerCase();
-    if (normalizedId.startsWith("deepseek-") && normalizedId.endsWith("-sg")) { counts.excluded++; continue; }
+    if (region.excludeSg && normalizedId.startsWith("deepseek-") && normalizedId.endsWith("-sg")) { counts.excluded++; continue; }
     if (seen.has(item.id)) { counts.duplicate++; continue; }
     if (item.disabled === true) { counts.disabled++; continue; }
     if (item.supportsToolCall === false) { counts.toolLess++; continue; }
@@ -38,7 +38,7 @@ export function projectModels(config) {
     } : undefined;
     models.push({
       id: item.id, name: typeof item.name === "string" ? item.name.slice(0, 256) : item.id,
-      provider: "workbuddy", api: "openai-completions", baseUrl: BASE_URL,
+      provider: region.id, api: "openai-completions", baseUrl: region.baseUrl,
       // Prefer availability: retain gateway image support even when the vendor is text-only,
       // and expose vendor-advertised image support even if gateway metadata omits/disables it.
       reasoning, input: item.supportsImages === true || vendor.images === true ? ["text", "image"] : ["text"],
@@ -60,6 +60,6 @@ export function projectModels(config) {
   return models;
 }
 
-export function fallbackModels() {
-  return projectModels({ models: [{ id: "default-model", name: "WorkBuddy Default (fallback)", maxInputTokens: 32768, maxOutputTokens: 4096 }] });
+export function fallbackModels(region = INTL_REGION) {
+  return projectModels({ models: [{ id: "default-model", name: region.fallbackName, maxInputTokens: 32768, maxOutputTokens: 4096 }] }, region);
 }

@@ -24,6 +24,8 @@ The following files retain or adapt upstream source:
 - `src/native-provider.js`: adapts the complete Pi Provider and command registration; ordinary unforced refreshes stay cache-only.
 - `src/native-lifecycle.js`: adapts startup refresh and guarded selected-model recovery. No per-turn/UI hooks remain.
 
+Since 0.2.0, these modules accept fixed regional profiles from `src/regions.js` and register independent international and CN Providers. CN protocol facts and client identity were checked statically against the official WorkBuddy 5.8.3 artifact, recorded in `docs/cn-protocol.md`; the international baseline remains unchanged. The new region-isolation and dual-provider tests use synthetic data and responses.
+
 The original bridge mode, credit/package readers, Pendant UI/host patches and tooltip lifecycle are intentionally omitted. No vendor bundles, application snapshots or extracted account data are included.
 
 ## Retained / adapted tests

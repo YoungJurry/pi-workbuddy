@@ -20,7 +20,7 @@ function harness({ selected = INTL_REGION, configured = regions.map(region => re
   }));
   const configuredProviders = new Set(configured);
   const ctx = {
-    mode: "tui", model: { provider: selected.id, id: "shared-model", name: selected.name + " cached", contextWindow: 8192 },
+    mode: "print", model: { provider: selected.id, id: "shared-model", name: selected.name + " cached", contextWindow: 8192 },
     isIdle: () => true, ui: { notify: message => notices.push(message) }, sessionManager: { getBranch: () => [] },
     modelRegistry: {
       hasConfiguredAuth: model => configuredProviders.has(model.provider),
@@ -37,23 +37,17 @@ function harness({ selected = INTL_REGION, configured = regions.map(region => re
     start: () => hooks.get("session_start")({}, ctx), stop: () => hooks.get("session_shutdown")({}, ctx) };
 }
 
-test("dual interactive startup refreshes both configured regions in parallel with one hook pair", async () => {
+test("dual interactive startup leaves both regions to Pi with no extension-owned refresh", async () => {
   for (const selected of regions) {
-    const pending = new Map(regions.map(region => [region.id, deferred()]));
-    const a = harness({ selected, refresh: ({ providers }) => pending.get(providers[0]).promise });
+    const a = harness({ selected, refresh: () => { throw new Error("No duplicate startup refresh"); } });
+    a.ctx.mode = "tui";
     assert.deepEqual(a.hookNames, ["session_start", "session_shutdown"]);
     assert.equal(a.start(), undefined);
-    assert.deepEqual(a.requests.map(request => request.providers), [["workbuddy"], ["workbuddy-cn"]]);
-    for (const request of a.requests) assert.equal(request.signal.aborted, false);
-    assert.equal(a.selections.length, 0);
-    const other = regions.find(region => region !== selected);
-    pending.get(other.id).resolve(success());
     await settle();
-    assert.equal(a.selections.length, 0, "the other region must not recover this region's selected model");
-    pending.get(selected.id).resolve(success());
-    await settle();
-    assert.deepEqual(a.selections.map(model => model.provider), [selected.id]);
-    assert.equal(a.ctx.model.name, selected.name + " live");
+    assert.deepEqual(a.requests, []);
+    assert.deepEqual(a.selections, []);
+    assert.deepEqual(a.notices, []);
+    assert.equal(a.ctx.model.name, selected.name + " cached");
   }
 });
 
@@ -85,6 +79,20 @@ test("dual headless startup waits for both regional discoveries, not just the se
     assert.equal(complete, true);
     assert.equal(a.selections.length, 1);
   }
+});
+
+test("switching to interactive mode cancels old headless work without starting another batch", async () => {
+  const pending = deferred();
+  const a = harness({ refresh: () => pending.promise });
+  const started = a.start();
+  assert.equal(a.requests.length, 2);
+  a.ctx.mode = "tui";
+  assert.equal(a.start(), undefined);
+  assert.equal(a.requests.length, 2);
+  for (const request of a.requests) assert.equal(request.signal.aborted, true);
+  pending.resolve(success());
+  await started;
+  assert.deepEqual(a.selections, []);
 });
 
 test("shutdown cancels both regional operations and suppresses both late completions", async () => {
@@ -153,7 +161,7 @@ test("a regional failure neither hides the other region's success nor recovers i
 });
 
 test("a disposed UI in one region cannot drop cancellation or finish headless discovery early", async () => {
-  for (const mode of ["tui", "print"]) {
+  for (const mode of ["print", "json", "rpc"]) {
     const pending = deferred();
     const a = harness({ refresh: ({ providers }) => providers[0] === INTL_REGION.id
       ? Promise.reject(new Error("synthetic regional failure")) : pending.promise });

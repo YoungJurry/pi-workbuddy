@@ -98,8 +98,65 @@ async function loadHost() {
   return { host, ModelRuntime, ModelRegistry, refreshModelCatalogs };
 }
 
-for (const cacheState of ["missing", "obsolete", "valid"]) {
-  test("Pi interactive startup handoff completes both regional catalogs with " + cacheState + " caches", {
+test("Pi-owned global discovery skips every region without configured credentials", {
+  skip: !aiDist && "Set PI_AI_TEST_PATH to pi-ai/dist",
+}, async () => {
+  const { host, ModelRuntime, ModelRegistry, refreshModelCatalogs } = await loadHost();
+  for (const configured of [[], [INTL_REGION], [CN_REGION]]) {
+    const credentials = new host.InMemoryCredentialStore(), calls = new Map();
+    for (const region of configured) await credentials.modify(region.id, async () => credential(region));
+    const runtime = await ModelRuntime.create({ credentials, modelsPath: null });
+    const providers = regions.map(region => createWorkbuddyProvider({ region, api: noInference, client: {
+      async catalog() { calls.set(region.id, (calls.get(region.id) ?? 0) + 1); return config("current"); },
+    } }));
+    for (const provider of providers) runtime.registerNativeProvider(provider);
+    await runtime.refresh({ allowNetwork: false });
+    const hooks = new Map();
+    registerNativeLifecycle({ on: (name, handler) => hooks.set(name, handler) }, providers);
+    hooks.get("session_start")({}, { mode: "tui", modelRegistry: new ModelRegistry(runtime) });
+    assert.equal(calls.size, 0);
+    await refreshModelCatalogs(runtime, new AbortController().signal);
+    for (const region of regions) {
+      const loggedIn = configured.includes(region);
+      assert.equal(calls.get(region.id) ?? 0, loggedIn ? 1 : 0);
+      assert.deepEqual(runtime.getModels(region.id).map(model => model.id), [loggedIn ? "current" : "default-model"]);
+    }
+    hooks.get("session_shutdown")();
+  }
+});
+
+test("Pi-owned offline discovery only restores caches and never calls the catalog client", {
+  skip: !aiDist && "Set PI_AI_TEST_PATH to pi-ai/dist",
+}, async () => {
+  const { host, ModelRuntime, refreshModelCatalogs } = await loadHost();
+  const previous = process.env.PI_OFFLINE;
+  process.env.PI_OFFLINE = "1";
+  try {
+    const credentials = new host.InMemoryCredentialStore(), modelsStore = new host.InMemoryModelsStore();
+    for (const region of regions) {
+      await credentials.modify(region.id, async () => credential(region));
+      await modelsStore.write(region.id, catalogCacheEntry(projectModels(config("cached"), region),
+        catalogCacheKey(credential(region), region)));
+    }
+    const runtime = await ModelRuntime.create({ credentials, modelsStore, modelsPath: null });
+    for (const region of regions) runtime.registerNativeProvider(createWorkbuddyProvider({ region, api: noInference,
+      client: { async catalog() { throw new Error("Must stay offline"); } } }));
+    await runtime.refresh({ allowNetwork: false });
+    const result = await refreshModelCatalogs(runtime, new AbortController().signal);
+    for (const region of regions) {
+      assert.equal(result.errors.has(region.id), false);
+      assert.deepEqual(runtime.getModels(region.id).map(model => model.id), ["cached"]);
+      assert.equal(runtime.getRegisteredNativeProvider(region.id).getCatalogStatus().source, "cache");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.PI_OFFLINE;
+    else process.env.PI_OFFLINE = previous;
+  }
+});
+
+for (const cacheState of ["missing", "obsolete", "valid"]) for (const supersede of [false, true]) {
+  test((supersede ? "Pi supersedes an earlier refresh" : "Pi alone owns interactive startup") +
+    " with " + cacheState + " caches", {
     skip: !aiDist && "Set PI_AI_TEST_PATH to pi-ai/dist", timeout: 15000,
   }, async t => {
     const { host, ModelRuntime, ModelRegistry, refreshModelCatalogs } = await loadHost();
@@ -121,7 +178,7 @@ for (const cacheState of ["missing", "obsolete", "valid"]) {
       async catalog(_credential, signal) {
         const count = (calls.get(region.id) ?? 0) + 1;
         calls.set(region.id, count);
-        if (count === 1) {
+        if (supersede && count === 1) {
           signals.set(region.id, signal);
           started.get(region.id).resolve();
           // Ignore abort deliberately: a late old result/error must not affect the replacement.
@@ -147,18 +204,25 @@ for (const cacheState of ["missing", "obsolete", "valid"]) {
       modelRegistry: new ModelRegistry(runtime), ui: { notify: message => notices.push(message) } };
     assert.deepEqual([...hooks.keys()], ["session_start", "session_shutdown"], "no additional hooks");
     assert.equal(hooks.get("session_start")({}, ctx), undefined, "interactive startup stays non-blocking");
-    await Promise.all([...started.values()].map(gate => gate.promise));
+    assert.equal(calls.size, 0, "the extension must not start a duplicate TUI catalog request");
+    if (supersede) {
+      // Preserve the old cancellation regression without recreating a TUI startup hook:
+      // a manual/headless host refresh may still be superseded by a later global pass.
+      void Promise.allSettled(regions.map(region => runtime.refresh({ providers: [region.id], force: true })));
+      await Promise.all([...started.values()].map(gate => gate.promise));
+    }
     // InteractiveMode.run() calls this AFTER init() emits session_start. It has no force flag.
     const result = await refreshModelCatalogs(runtime, new AbortController().signal);
+    const expectedCalls = supersede ? 2 : 1;
     for (const region of regions) {
       assert.equal(result.errors.has(region.id), false);
-      assert.equal(signals.get(region.id).aborted, true, "host supersedes forced startup discovery");
-      assert.equal(calls.get(region.id), 2, "the replacement must finish online discovery");
+      if (supersede) assert.equal(signals.get(region.id).aborted, true, "host cancels the obsolete request");
+      assert.equal(calls.get(region.id), expectedCalls, "only host-owned discovery should fetch");
       assert.deepEqual(runtime.getModels(region.id).map(model => model.id), ["current-" + region.id]);
       const stored = await modelsStore.read(region.id);
       assert.deepEqual(stored.models.map(model => model.id), ["current-" + region.id]);
     }
-    for (const gate of delayed.values()) {
+    if (supersede) for (const gate of delayed.values()) {
       if (cacheState === "valid") gate.reject(new Error("Late canceled request failure"));
       else gate.resolve(config("late-obsolete"));
     }
@@ -171,9 +235,9 @@ for (const cacheState of ["missing", "obsolete", "valid"]) {
     assert.deepEqual(notices, [], "superseded startup requests are not reported as failures");
     assert.equal(ctx.model, selected);
     await refreshModelCatalogs(runtime, new AbortController().signal);
-    assert.deepEqual([...calls.values()], [2, 2], "later ordinary refreshes reuse successful catalogs");
+    assert.deepEqual([...calls.values()], [expectedCalls, expectedCalls], "later ordinary refreshes reuse successful catalogs");
     await runtime.refresh({ providers: [INTL_REGION.id], force: true });
-    assert.deepEqual([...calls.values()], [3, 2], "manual force refresh only fetches its own region");
+    assert.deepEqual([...calls.values()], [expectedCalls + 1, expectedCalls], "manual force refresh only fetches its own region");
     assert.deepEqual([...hooks.keys()], ["session_start", "session_shutdown"]);
   });
 }

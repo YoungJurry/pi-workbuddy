@@ -15,7 +15,7 @@ const noInference = { stream() { throw new Error("Unexpected inference"); }, str
 const settleRefresh = () => new Promise(resolve => setImmediate(resolve));
 
 async function startSession(a) {
-  assert.equal(a.hooks.get("session_start")({}, a.ctx), undefined, "interactive startup must not await discovery");
+  await a.hooks.get("session_start")({}, a.ctx);
   await settleRefresh();
 }
 
@@ -41,7 +41,7 @@ function assembly() {
   let stored;
   const selected = { provider: "other", id: "other-model" };
   const ctx = {
-    mode: "tui",
+    mode: "print",
     model: selected,
     isIdle: () => true,
     sessionManager: { getBranch() { throw new Error("Do not scan another provider's history"); } },
@@ -78,7 +78,7 @@ test("factory is inert, registers one native provider, one command and only sess
   assert.equal("promptCache" in a.provider.getModels()[0], false, "no idle cache warming");
 });
 
-test("startup refreshes once even with another model selected, without touching its history or selection", async () => {
+test("headless startup refreshes once even with another model selected, without touching its history or selection", async () => {
   const a = assembly();
   await startSession(a);
   assert.equal(a.counters.catalog, 1);
@@ -114,7 +114,7 @@ test("unconfigured startup does not request credentials, refresh a directory, or
   assert.equal(a.counters.catalog, 0);
 });
 
-test("offline startup explicitly requests cache-only refresh", async () => {
+test("offline headless startup explicitly requests cache-only refresh", async () => {
   const saved = process.env.PI_OFFLINE;
   process.env.PI_OFFLINE = "1";
   try {

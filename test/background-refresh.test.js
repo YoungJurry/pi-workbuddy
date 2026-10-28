@@ -23,7 +23,7 @@ function harness(refresh) {
     async setModel(model) { selections.push(model); return true; },
   };
   const ctx = {
-    mode: "tui", model: cached, isIdle: () => true,
+    mode: "print", model: cached, isIdle: () => true,
     ui: { notify: message => notices.push(message) },
     sessionManager: { getBranch: () => [] },
     modelRegistry: {
@@ -37,21 +37,20 @@ function harness(refresh) {
   return { pi, provider, ctx, start, stop, commands, notices, selections, requests };
 }
 
-test("interactive startup returns immediately while discovery is still pending", async () => {
-  const pending = deferred();
-  const a = harness(() => pending.promise);
+test("interactive startup delegates entirely to Pi without auth checks, requests or model changes", async () => {
+  const a = harness(() => { throw new Error("Pi owns interactive startup refresh"); });
+  a.ctx.mode = "tui";
+  a.ctx.modelRegistry.hasConfiguredAuth = () => { throw new Error("Do not inspect auth in the TUI hook"); };
   assert.equal(a.start(), undefined);
-  assert.equal(a.requests.length, 1);
+  await settleRefresh();
+  assert.equal(a.requests.length, 0);
   assert.equal(a.ctx.model.name, "Cached model");
   assert.equal(a.selections.length, 0);
-  await settleRefresh();
-  assert.equal(a.selections.length, 0, "startup did not need discovery to complete");
-  pending.resolve(success());
-  await settleRefresh();
-  assert.equal(a.selections[0].name, "Updated model");
+  assert.equal(a.notices.length, 0);
+  assert.equal(a.stop(), undefined);
 });
 
-test("a background refresh cannot overwrite a model selected while discovery was pending", async () => {
+test("headless discovery cannot overwrite a model selected while it was pending", async () => {
   const pending = deferred();
   const a = harness(() => pending.promise);
   a.start();
@@ -63,7 +62,7 @@ test("a background refresh cannot overwrite a model selected while discovery was
   assert.equal(a.selections.length, 0);
 });
 
-test("a background refresh does not switch models during an active turn", async () => {
+test("headless discovery does not switch models during an active turn", async () => {
   const pending = deferred();
   const a = harness(() => pending.promise);
   a.start();
@@ -115,7 +114,7 @@ test("a new session cancels the old refresh, whose completion cannot clear the n
   assert.equal(a.selections.length, 0);
 });
 
-test("the operation signal still cancels a detached refresh", async () => {
+test("the operation signal still cancels headless discovery", async () => {
   const pending = deferred(), controller = new AbortController();
   const a = harness(() => pending.promise);
   a.ctx.signal = controller.signal;
@@ -159,9 +158,8 @@ test("explicit manual refresh still waits and reports success", async () => {
   assert.match(a.notices[0], /catalog refreshed/);
 });
 
-test("an invalidated UI cannot produce an unhandled background rejection", async () => {
+test("an invalidated UI cannot reject the headless startup batch", async () => {
   const a = harness(async () => { throw new Error("discovery failed"); });
   a.ctx.ui.notify = () => { throw new Error("context disposed"); };
-  assert.equal(a.start(), undefined);
-  await settleRefresh();
+  await assert.doesNotReject(a.start());
 });

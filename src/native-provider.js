@@ -90,8 +90,8 @@ export function createWorkbuddyProvider({ api, region = INTL_REGION, client = cr
           if (!context.signal.aborted) lastCatalogError = describeFailure(error);
         }
       }
-      // Pi's unforced startup pass can supersede our forced session_start request.
-      // Let its replacement finish the first online discovery, even with a disk cache.
+      // Pi owns interactive startup discovery and does not pass force:true.
+      // Fetch once per instance/account even when a disk cache was restored.
       // Only a successfully published remote catalog makes later unforced passes local.
       if (!context.allowNetwork || (!context.force && catalogSource === "remote") ||
         context.signal.aborted || context.credential?.type !== "oauth") return;

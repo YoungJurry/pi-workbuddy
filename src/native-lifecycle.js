@@ -57,6 +57,9 @@ export function registerNativeLifecycle(pi, provider) {
 
   pi.on("session_start", (_event, ctx) => {
     cancelRefresh();
+    // InteractiveMode already schedules the host's global catalog refresh.
+    // Only headless/RPC/SDK sessions need our explicit startup fallback.
+    if (ctx.mode === "tui") return;
     const configured = providers.filter(item => ctx.modelRegistry.hasConfiguredAuth(item.getModels()[0]));
     if (!configured.length) return;
     const controller = new AbortController();
@@ -65,14 +68,9 @@ export function registerNativeLifecycle(pi, provider) {
     // A disposed UI can throw while reporting one region's failure. Keep the
     // controller alive until every region settles, so shutdown still cancels
     // the others and headless startup never finishes discovery prematurely.
-    const refresh = Promise.allSettled(configured.map(item => refreshWorkbuddyCatalog(pi, item, ctx, signal))).finally(() => {
+    return Promise.allSettled(configured.map(item => refreshWorkbuddyCatalog(pi, item, ctx, signal))).finally(() => {
       if (activeRefresh === controller) activeRefresh = undefined;
     });
-    // Headless callers still wait for discovery before their first prompt.
-    if (ctx.mode !== "tui") return refresh;
-    // Interactive sessions start with the cached/fallback catalog. Keep the live
-    // context so recovery cannot overwrite a model the user selects meanwhile.
-    void refresh.catch(() => {});
   });
 
   // Never wait for network I/O while exiting, switching sessions, or reloading.

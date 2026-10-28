@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3
+
+- Delegate interactive startup model discovery entirely to Pi's native global catalog refresh. The extension's `session_start` handler returns immediately in TUI mode without auth checks, a controller, or duplicate catalog requests.
+- Remove the extension-owned detached interactive refresh path. Keep the existing shared lifecycle pair only as a foreground fallback/cancellation path for headless, RPC and SDK callers that bind extension lifecycle events; no new hooks, timers or background workers.
+- Preserve native cache restoration, first online unforced discovery, explicit regional force-refresh commands, account isolation and obsolete-publication guards.
+- Interactive discovery updates the host catalog without extension-driven model switching; select a real model with `/model` if the current selection is a first-run fallback placeholder.
+- Test real coding-agent global discovery with missing/obsolete/valid caches and one successful request per region, retain superseded-request regressions, and verify headless waiting/cancellation and zero interactive startup requests.
+
 ## 0.2.2
 
 - Let an allowed, unforced host refresh complete the first online discovery for the current provider instance/account. Pi's interactive startup refresh can supersede the extension's forced session-start request; the replacement now fetches instead of leaving only cached/fallback models.

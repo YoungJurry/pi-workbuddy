@@ -87,12 +87,14 @@ export function createWorkbuddyProvider({ api, region = INTL_REGION, client = cr
             models = restored; catalogSource = "cache"; catalogAccountKey = key; lastCatalogError = undefined;
           } }) === false) return;
         } catch (error) {
-          lastCatalogError = describeFailure(error);
+          if (!context.signal.aborted) lastCatalogError = describeFailure(error);
         }
       }
-      // Startup and the explicit command request force:true. Ordinary host catalog
-      // enumeration remains cache-only instead of repeatedly fetching /v3/config.
-      if (!context.allowNetwork || !context.force || context.signal.aborted || context.credential?.type !== "oauth") return;
+      // Pi's unforced startup pass can supersede our forced session_start request.
+      // Let its replacement finish the first online discovery, even with a disk cache.
+      // Only a successfully published remote catalog makes later unforced passes local.
+      if (!context.allowNetwork || (!context.force && catalogSource === "remote") ||
+        context.signal.aborted || context.credential?.type !== "oauth") return;
       try {
         // Validate region/account binding even when a caller supplies a custom client.
         accountHeaders(context.credential, region);
@@ -104,7 +106,8 @@ export function createWorkbuddyProvider({ api, region = INTL_REGION, client = cr
           },
         });
       } catch (error) {
-        lastCatalogError = describeFailure(error);
+        // An obsolete request must not overwrite diagnostics from its replacement.
+        if (!context.signal.aborted) lastCatalogError = describeFailure(error);
         throw error;
       }
     },

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Let an allowed, unforced host refresh complete the first online discovery for the current provider instance/account. Pi's interactive startup refresh can supersede the extension's forced session-start request; the replacement now fetches instead of leaving only cached/fallback models.
+- Keep disk-cache restoration immediate, but do not count it as a successful online discovery. After a remote catalog is successfully published, ordinary unforced refreshes stay local; explicit force refreshes still fetch.
+- Ignore diagnostics from aborted obsolete requests so they cannot overwrite a replacement's successful state.
+- Retain exactly the existing shared session-start/session-shutdown hooks, cancellation and background startup: no new hooks, timers, polling, resident tasks or automatic retry loops.
+- Add real coding-agent ModelRuntime/interactive-refresh regressions for both regions, including missing/obsolete/valid caches, delayed canceled results, offline operation and post-success request reuse.
+
 ## 0.2.1
 
 - Discover models from the default CLI agent's server-provided `models` list instead of exposing the entire `/v3/config` model-definition registry. Match official CLI 2.161.0 ID/name/alias resolution, ordering, deduplication and custom/chat additions; keep regional and endpoint filters.

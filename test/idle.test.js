@@ -128,18 +128,22 @@ test("offline startup explicitly requests cache-only refresh", async () => {
   }
 });
 
-test("unforced host catalog enumeration restores cache without fetching /v3/config", async () => {
+test("unforced discovery restores cache offline, fetches once online, then reuses the remote catalog", async () => {
   let requests = 0;
   const provider = createWorkbuddyProvider({ api: noInference,
-    client: { async catalog() { requests++; throw new Error("Unexpected request"); } } });
+    client: { async catalog() { requests++; return { models: [{ id: "live-model" }] }; } } });
   const cached = projectModels({ models: [{ id: "cached-model" }] });
-  const context = { credential: credential(), allowNetwork: true, force: false,
+  const context = { credential: credential(), allowNetwork: false, force: false,
     signal: new AbortController().signal, stored: catalogCacheEntry(cached, catalogCacheKey(credential())),
     async publish({ update }) { update?.(); return true; } };
   await provider.refreshModels(context);
-  await provider.refreshModels(context);
   assert.equal(requests, 0);
   assert.equal(provider.getModels()[0].id, "cached-model");
+  await provider.refreshModels({ ...context, allowNetwork: true });
+  assert.equal(requests, 1);
+  assert.equal(provider.getModels()[0].id, "live-model");
+  await provider.refreshModels({ ...context, allowNetwork: true });
+  assert.equal(requests, 1);
 });
 
 test("startup failures retain upstream messages; other model never changes", async () => {

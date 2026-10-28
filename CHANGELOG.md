@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Discover models from the default CLI agent's server-provided `models` list instead of exposing the entire `/v3/config` model-definition registry. Match official CLI 2.161.0 ID/name/alias resolution, ordering, deduplication and custom/chat additions; keep regional and endpoint filters.
+- Do not expand `modelTags` into an implicit allowlist. Keep legacy catalogs without `agents` compatible, but reject malformed/missing CLI selection when `agents` is present rather than widening to all definitions.
+- Exclude explicitly tagged image/video generation models from the chat provider.
+- Version projected cache entries so old unfiltered catalogs cannot reappear during startup or offline recovery. Account cache keys and credentials stay unchanged; the first upgrade needs an online catalog refresh.
+- Keep model IDs dynamic: subsequent official list changes are picked up at startup or by the regional refresh command without updating the extension.
+- Add offline regressions for CN-style mixed registries, agent selection, dynamic additions/removals, existing filters and cache migration.
+
 ## 0.2.0
 
 - Add a second native Provider, `workbuddy-cn` (WorkBuddy AI CN), alongside the existing international `workbuddy` Provider.

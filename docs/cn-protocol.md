@@ -88,6 +88,12 @@ This is not a packet capture or a complete desktop-client emulation. Other offic
 
 ## Model and test policy
 
-The international integration's DeepSeek `-sg` exclusion is retained only for that region. It is an integration policy, not a requirement inferred from the CN protocol. CN projects eligible models returned in its own account catalog without that exclusion. Vendor capability supplements remain optimistic metadata, not live verification of the CN gateway.
+The international integration's DeepSeek `-sg` exclusion is retained only for that region. It is an integration policy, not a requirement inferred from the CN protocol. CN projects eligible models selected by the default CLI agent in its own account catalog without that exclusion, not the full model-definition registry. Vendor capability supplements remain optimistic metadata, not live verification of the CN gateway.
+
+### Agent model selection (0.2.1)
+
+Read-only inspection of the official npm artifact `@tencent-ai/codebuddy-code@2.161.0`, `package/dist/codebuddy.js`, located `AgentManager.computeModelsFromRaw()` / `computeModels()`. These resolve the current agent's `models` entries by ID, then name, then alias, preserve order and deduplicate, then append models tagged `custom` / `chat` or prefixed `custom:`. The default CLI base agent is selected by `cli` / `default` tags, with a legacy `name: cli` fallback. The verified code does not expand `modelTags: ["craft"]` into all matching definitions. The extension follows that list-selection behavior, then applies its own regional, endpoint and chat-compatibility filters. It does not emulate every official product transformation (for example feature-gated Auto tier replacement), local custom-model configuration, or entitlement logic.
+
+A read-only CN catalog check on 2026-10-28 found 61 definitions, a 19-ID `cli.models` list, and no top-level `availableModels`. The old projection accepted 60 definitions after excluding `wb-lite`; it ignored the agent list and admitted completion and media models. This is a catalog observation, not an inference test or a guarantee that all 19 candidates are usable. No raw account catalog, credentials or proprietary bundle is included in the repository. The regression tests use synthetic catalogs.
 
 Offline tests cover independent login credentials and refresh locks, both account-lookup routes, token-domain propagation, isolated model stores, cross-region rejection, scoped dispatch, cancellation and shared lifecycle hooks. Real-service text/tool/image compatibility and long-term token refresh still require an explicitly authorized user test. Static source inspection and mocked success responses do not establish that every CN account can use this integration.

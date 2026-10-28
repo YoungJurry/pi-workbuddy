@@ -3,6 +3,9 @@ import { INTL_REGION } from "./regions.js";
 import { projectModels } from "./native-models.js";
 import { WorkbuddyError } from "./native-errors.js";
 
+// Old projected caches lost the agent selection metadata and cannot be refiltered.
+const PROJECTION_VERSION = 2;
+
 /** Local cache validator only; never sent as an HTTP ETag. Tokens are not hashed or stored. */
 export function catalogCacheKey(credential, region = INTL_REGION) {
   if (credential?.type !== "oauth" || credential.origin !== region.origin || !credential.userId ||
@@ -14,7 +17,7 @@ export function catalogCacheKey(credential, region = INTL_REGION) {
 
 /** Reproject a public metadata whitelist, never cached auth, endpoints, headers or instructions. */
 export function restoreCatalog(entry, key, region = INTL_REGION) {
-  if (!key || entry?.etag !== key) return undefined;
+  if (!key || entry?.etag !== key || entry.projectionVersion !== PROJECTION_VERSION) return undefined;
   if (!Array.isArray(entry.models) || entry.models.length > 2000) {
     throw new WorkbuddyError("catalog-cache", "Cached WorkBuddy model metadata is invalid.");
   }
@@ -35,5 +38,5 @@ export function restoreCatalog(entry, key, region = INTL_REGION) {
 
 export function catalogCacheEntry(models, key) {
   // Models originate from projectModels(), which emits only bounded public metadata.
-  return { models, checkedAt: Date.now(), etag: key };
+  return { models, checkedAt: Date.now(), etag: key, projectionVersion: PROJECTION_VERSION };
 }

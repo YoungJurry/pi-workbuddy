@@ -32,11 +32,11 @@ export function describeFailure(error) {
   for (let current = error, depth = 0; current && depth < 6 && !seen.has(current); current = current.cause, depth++) {
     seen.add(current);
     if (!(current instanceof WorkbuddyError) || !Object.hasOwn(REASONS, current.diagnosticCode)) continue;
-    const { status, businessCode, total, accepted, endpoint, disabled, toolLess, unavailable, invalid, duplicate, excluded } = current.details;
+    const { status, businessCode, total, selected, accepted, endpoint, disabled, toolLess, nonChat, unavailable, invalid, duplicate, excluded } = current.details;
     const fields = [];
     if (Number.isInteger(status) && status >= 100 && status <= 599) fields.push("HTTP " + status);
     if (Number.isSafeInteger(businessCode)) fields.push("business code " + businessCode);
-    for (const [name, value] of Object.entries({ total, accepted, endpoint, disabled, toolLess, unavailable, invalid, duplicate, excluded })) {
+    for (const [name, value] of Object.entries({ total, selected, accepted, endpoint, disabled, toolLess, nonChat, unavailable, invalid, duplicate, excluded })) {
       if (Number.isSafeInteger(value) && value >= 0) fields.push(name + "=" + value);
     }
     const reason = ["http", "invalid-json"].includes(current.diagnosticCode) ? current.message : REASONS[current.diagnosticCode];
